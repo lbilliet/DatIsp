@@ -1,0 +1,512 @@
+resultat
+rm(list=ls())
+rm(list=ls())
+### chargement du traitement de Treetagger sur les posts IVG :
+load("ivg.rdata")
+load("data/ivg.rdata")
+load("data/contraception.rdata")
+####### pour le rapport :
+par(mar=c(4,6,4,4))
+tab <- table(ivg$wclass)
+bplt <- barplot(tab, horiz=T, las=1, xlim=c(0,max(tab)*1.2))
+bool <- ivg$lemma == "<unknown>"
+sum(bool)
+ivg$lemma[bool] <- ivg$token[bool]
+voir <- ivg
+test <- tapply(voir$lemma, voir$wclass,function(x){
+tab <- table(x)
+tab <- sort(tab, decreasing=T)
+return(names(tab[1]))
+})
+test["name"] <- "slt"
+lab <- paste (as.numeric(tab), as.character(test),sep="  ")
+text(x=tab+10000, y= bplt, labels=lab)
+get_corpus <- function(voir){
+bool <- voir$token == "AAAAAZZZZZ"
+sum(bool)
+inclus <- c("verb","noun","name","adjective")
+bool <- voir$wclass %in% inclus
+voir2 <- subset (voir, bool)
+bool <- voir2$lemma == "<unknown>"
+sum(bool)
+voir2$lemma[bool] <- voir2$token[bool]
+bool <- voir2$token == "AAAAAZZZZZ"
+sum(bool)
+### enlever les pipe
+voir2$lemma <- lapply(voir2$lemma, function(x){
+x <- unlist(strsplit(x,"\\|"))
+if (length(x) == 1){
+return(x)
+} else {
+return(x[2])
+}
+})
+tous <- paste (voir2$lemma,collapse=" ")
+tous <- unlist(strsplit(tous, "AAAAAZZZZZ"))
+length(tous)
+### extraction pour word2vec :
+# writeLines(tous,"ivg.txt")
+###### analyser ce corpus de termes lemmatisés :
+library(tm)
+myCorpus <- Corpus(VectorSource(tous))
+myCorpus[[1]]
+myCorpus[[1]]$content
+myCorpus[[2]]$meta
+## fonctions disponibles :
+getTransformations()
+#### fonction pour cleaner les données :
+removeAccents <- content_transformer(function(x) {
+return (x <- iconv(x, to='ASCII//TRANSLIT'))
+})
+#create the toSpace content transformer
+toSpace <- content_transformer(function(x, pattern) {
+return (gsub(pattern, " ", x))
+})
+# retirer les accents
+myCorpus <- tm_map(myCorpus, removeAccents)
+myCorpus[[1]]$content
+# retirer les mots vides
+motsvides <- c("avoir","etre","faire","bonjour","savoir","merci",
+"pouvoir","aller","reponse","question",
+"meme","autre")
+myCorpus <- tm_map(myCorpus, removeWords, motsvides)
+myCorpus[[1]]$content
+## retirer la punctuation
+myCorpus <- tm_map(myCorpus, toSpace, "[[:punct:]]")
+myCorpus <- tm_map(myCorpus,content_transformer(tolower))
+myCorpus <- tm_map(myCorpus, removeNumbers)
+myCorpus[[1]]$content
+### extraction pour word2vec :
+# writeLines(tous,"ivg.txt")
+# texte <- unlist(sapply(myCorpus, `[`, "content"))
+# length(texte)
+# writeLines(texte,"ivg.txt")
+return(myCorpus)
+}
+ivg$token[1:100]
+myCorpusContraception <- get_corpus(contraception)
+myCorpusIVG <- get_corpus(ivg)
+corpus <- append(myCorpusContraception,myCorpusIVG)
+dtm <- DocumentTermMatrix(corpus,control=list(stemming =F,
+stopwords=F,
+minWordLength=1,
+removeNumers=T,
+removePunctuation=T,
+bounds = list(global = c(10,Inf))))
+freq <- colSums(as.matrix(dtm))
+length(freq)
+freq2 <- sort(freq,decreasing = T)
+freq2[1:100]
+############################################### LDA ######################################"
+library(tm)
+library(RTextTools)
+library(topicmodels)
+# Parametres Gibbs sampling (diagnostics traces MCMC pour établir les bons paramètre)
+# Nombre d'iterations
+iter <- 1000
+# période de chauffe
+burnin <- 100
+# thinig  : augmenter décorrélation chaîne
+thin <- 5
+# Nombre de sujets
+k <- 3
+ldaOut <-LDA(dtm,k, method = "Gibbs",
+control=list(burnin = burnin,
+iter = iter, thin=thin))
+# n termes les plus probable dans chaque sujet
+n <- 20
+ldaOut.terms <- as.matrix(terms(ldaOut,n))
+ldaOut.terms
+n <- 20
+ldaOut.terms <- as.matrix(terms(ldaOut,n))
+ldaOut.terms
+topicProbabilities <- as.data.frame(ldaOut@gamma)
+bool <- topicProbabilities$V1 > topicProbabilities$V2
+### Classifier
+topicProbabilities$topic <- ifelse(bool, "Topic1","Topic2")
+topicProbabilities$categorie <- c(rep("Contraception",length(myCorpusContraception)),
+rep("IVG",length(myCorpusIVG)))
+ftable(topicProbabilities$topic, topicProbabilities$categorie)
+which(topicProbabilities$V2 == max(topicProbabilities$V2))
+max(topicProbabilities$V1)
+library("slam")
+summary(col_sums(dtm))
+freq <- colSums(as.matrix(dtm))
+freq <- sort(freq)
+freq <- data.frame(lem=names(freq), frequence=as.numeric(freq))
+freq <- freq[order(-freq$frequence),]
+head(freq)
+findAssocs(dtm,"pilule",0.3)
+wordcloudFromCorpus <- function(corpus, nwords){
+library(wordcloud)
+dtm <- DocumentTermMatrix(corpus,control=list(stemming =F,
+stopwords=F,
+minWordLength=1,
+removeNumers=T,
+removePunctuation=T,
+bounds = list(global = c(10,Inf))))
+set.seed(42)
+#limit words by specifying min frequency
+freq <- colSums(as.matrix(dtm))
+wordcloud(names(freq),freq,max.words = nwords)
+}
+wordcloudFromCorpus(myCorpusIVG, 20)
+wordcloudFromCorpus(myCorpusContraception, 20)
+voir2 <- subset (ivg, lemma=="enceindre")
+View(voir2)
+library("tm")
+myCorpusIVG <- myCorpus
+library(wordVectors)
+model = train_word2vec("Contraception.txt",output="Contraception.bin",threads = 3,vectors = 100,window=12,
+force=T)
+model = train_word2vec("data/Contraception.txt",output="Contraception.bin",threads = 3,vectors = 100,window=12,
+force=T)
+model = read.vectors("Contraception.bin")
+names(nearest_to(model,model[[c("cerazette")]]))
+nearest_to(model,model[[c("cerazette","microval","desopop","luteran","desogestrel",
+"belara","optimizette","melodia","moneva","zoely","efezial",
+"cycleane","gestodene")]],50)
+model = read.vectors("ivg.bin")
+model = train_word2vec("data/ivg.txt",output="data/ivg.bin",threads = 3,vectors = 100,window=12,
+force=T)
+model = read.vectors("data/ivg.bin")
+nearest_to(model,model[["pilule"]],10)
+nearest_to(model,model[["vouloir"]],10)
+nearest_to(model,model[["enfant"]],10)
+nearest_to(model,model[["ivg"]],10)
+nearest_to(model,model[["triste"]],10)
+model = read.vectors("depression.bin")
+model = read.vectors("data/depression.bin")
+names(nearest_to(model,model[["deprime"]],10))
+resultat <- names(nearest_to(model,model[["poids"]],20))
+names(nearest_to(model,model[[resultat]],20))
+nearest_to(model,model[["paroxetine"]],10)
+names(nearest_to(model,model[["angoisse"]],10))
+nearest_to(model,model[["dormir"]],10)
+nearest_to(model,model[["nuit"]],10)
+nearest_to(model,model[["angoisse"]],10)
+nearest_to(model,model[["bien"]],10)
+project(model,model[["angoisse"]])
+correctionOrthographe <- function(model, medicament){
+library(stringdist)
+proches <- names(nearest_to(model,model[[medicament]],100))
+stringdist(medicament, proches,method = "soundex")
+distances <- stringdist(medicament, proches,method = "lv")
+temp <- data.frame(terme=proches, distance = as.numeric(distances))
+temp$soundex <- stringdist(medicament, proches,method = "soundex")
+temp2 <- subset (temp, distance < 3 | soundex==0)
+return(as.character(temp2$terme))
+}
+correctionOrthographe(model, medicament)
+medicament <- "cerazette"
+correctionOrthographe(model, medicament)
+model = train_word2vec("data/ivg.txt",output="data/ivg.bin",threads = 3,vectors = 100,window=12,
+force=T)
+correctionOrthographe(model, "pillule")
+correctionOrthographe(model, "pillule")
+nearest_to(model,model[["pilule"]],10)
+correctionOrthographe(model, "pilule")
+correctionOrthographe(model, "pilulle")
+correctionOrthographe(model, "pillule")
+model = read.vectors("data/depression.bin")
+correctionOrthographe(model, medicament)
+medicament <- "cerazette"
+correctionOrthographe(model, medicament)
+medicament <- "propranolol"
+correctionOrthographe(model, medicament)
+library(wordVectors)
+rm(list=ls())
+correctionOrthographe <- function(model, medicament){
+library(stringdist)
+proches <- names(nearest_to(model,model[[medicament]],100))
+stringdist(medicament, proches,method = "soundex")
+distances <- stringdist(medicament, proches,method = "lv")
+temp <- data.frame(terme=proches, distance = as.numeric(distances))
+temp$soundex <- stringdist(medicament, proches,method = "soundex")
+temp2 <- subset (temp, distance < 3 | soundex==0)
+return(as.character(temp2$terme))
+}
+correctionOrthographe(model, "pillule")
+model = read.vectors("data/ivg.bin")
+correctionOrthographe(model, "pillule")
+df <- read.table("data/IVG.csv",sep="\t",header=T, comment.char = "", quote="", stringsAsFactors = F)
+colnames(df) <- gsub("^X.","",colnames(df))
+bool <- df$contentPost == ""
+sum(bool) ## 3 052 postes vides
+sum(bool) ## postes vides
+df <- subset (df, !bool)
+### nombre de caractères :
+ncar <- nchar(df$contentPost)
+table(ncar)
+## je supprime ces 20 posts qui n'ont quasiment pas de contenu :
+voir <- subset (df, ncar < 72)
+bool <- ncar < 72
+sum(bool)
+df <- subset (df, !bool)
+## je supprime les posts qui n'ont quasiment pas de contenu :
+voir <- subset (df, ncar < 72)
+bool <- ncar < 72
+sum(bool)
+df <- subset (df, !bool)
+##################### Etape1 lemmatisation
+########### appeler treetagger en ligne de commande :
+library(koRpus)
+## chemin vers TreeTagger pour lemattiser
+cheminTT <- "/home/ERIAS/Documents/sebastien/test_java/treetagger"
+## ecrire un fichier :
+separateur <- "\nAAAAAZZZZZ\n"
+df$contentPost <- tolower(df$contentPost)
+exemples <- paste(df$contentPost,collapse=separateur)
+getwd()
+writeLines(exemples, "exemples.txt")
+rm(list=ls())
+### chargement du traitement de Treetagger sur les posts IVG :
+load("data/ivg.rdata")
+par(mar=c(4,6,4,4))
+tab <- table(ivg$wclass)
+bplt <- barplot(tab, horiz=T, las=1, xlim=c(0,max(tab)*1.2))
+bool <- ivg$lemma == "<unknown>"
+sum(bool)
+ivg$lemma[bool] <- ivg$token[bool]
+voir <- ivg
+test <- tapply(voir$lemma, voir$wclass,function(x){
+tab <- table(x)
+tab <- sort(tab, decreasing=T)
+return(names(tab[1]))
+})
+test["name"] <- "slt"
+lab <- paste (as.numeric(tab), as.character(test),sep="  ")
+text(x=tab+10000, y= bplt, labels=lab)
+get_corpus <- function(voir){
+bool <- voir$token == "AAAAAZZZZZ"
+sum(bool)
+inclus <- c("verb","noun","name","adjective")
+bool <- voir$wclass %in% inclus
+voir2 <- subset (voir, bool)
+bool <- voir2$lemma == "<unknown>"
+sum(bool)
+voir2$lemma[bool] <- voir2$token[bool]
+bool <- voir2$token == "AAAAAZZZZZ"
+sum(bool)
+### enlever les pipe
+voir2$lemma <- lapply(voir2$lemma, function(x){
+x <- unlist(strsplit(x,"\\|"))
+if (length(x) == 1){
+return(x)
+} else {
+return(x[2])
+}
+})
+tous <- paste (voir2$lemma,collapse=" ")
+tous <- unlist(strsplit(tous, "AAAAAZZZZZ"))
+length(tous)
+### extraction pour word2vec :
+# writeLines(tous,"ivg.txt")
+###### analyser ce corpus de termes lemmatisés :
+library(tm)
+myCorpus <- Corpus(VectorSource(tous))
+myCorpus[[1]]
+myCorpus[[1]]$content
+myCorpus[[2]]$meta
+## fonctions disponibles :
+getTransformations()
+#### fonction pour cleaner les données :
+removeAccents <- content_transformer(function(x) {
+return (x <- iconv(x, to='ASCII//TRANSLIT'))
+})
+#create the toSpace content transformer
+toSpace <- content_transformer(function(x, pattern) {
+return (gsub(pattern, " ", x))
+})
+# retirer les accents
+myCorpus <- tm_map(myCorpus, removeAccents)
+myCorpus[[1]]$content
+# retirer les mots vides
+motsvides <- c("avoir","etre","faire","bonjour","savoir","merci",
+"pouvoir","aller","reponse","question",
+"meme","autre")
+myCorpus <- tm_map(myCorpus, removeWords, motsvides)
+myCorpus[[1]]$content
+## retirer la punctuation
+myCorpus <- tm_map(myCorpus, toSpace, "[[:punct:]]")
+myCorpus <- tm_map(myCorpus,content_transformer(tolower))
+myCorpus <- tm_map(myCorpus, removeNumbers)
+myCorpus[[1]]$content
+### extraction pour word2vec :
+# writeLines(tous,"ivg.txt")
+# texte <- unlist(sapply(myCorpus, `[`, "content"))
+# length(texte)
+# writeLines(texte,"ivg.txt")
+return(myCorpus)
+}
+myCorpusContraception <- get_corpus(contraception)
+myCorpusIVG <- get_corpus(ivg)
+## fusion des 2 corpus :
+# fréquence d'apparition de 10 mots à l'infini
+corpus <- append(myCorpusContraception,myCorpusIVG)
+dtm <- DocumentTermMatrix(corpus,control=list(stemming =F,
+stopwords=F,
+minWordLength=1,
+removeNumers=T,
+removePunctuation=T,
+bounds = list(global = c(10,Inf))))
+freq <- colSums(as.matrix(dtm))
+length(freq)
+freq2 <- sort(freq,decreasing = T)
+freq2[1:100]
+rm(list=ls())
+### chargement du traitement de Treetagger sur les posts IVG :
+rm(list=ls())
+### chargement du traitement de Treetagger sur les posts IVG :
+load("data/ivg.rdata")
+par(mar=c(4,6,4,4))
+tab <- table(ivg$wclass)
+bplt <- barplot(tab, horiz=T, las=1, xlim=c(0,max(tab)*1.2))
+bool <- ivg$lemma == "<unknown>"
+sum(bool)
+ivg$lemma[bool] <- ivg$token[bool]
+voir <- ivg
+test <- tapply(voir$lemma, voir$wclass,function(x){
+tab <- table(x)
+tab <- sort(tab, decreasing=T)
+return(names(tab[1]))
+})
+test["name"] <- "slt"
+lab <- paste (as.numeric(tab), as.character(test),sep="  ")
+text(x=tab+10000, y= bplt, labels=lab)
+##### fonction permattant de transformer la sortie de TreeTagger
+## en objet Corpus de la librairie TM
+get_corpus <- function(voir){
+bool <- voir$token == "AAAAAZZZZZ"
+sum(bool)
+inclus <- c("verb","noun","name","adjective")
+bool <- voir$wclass %in% inclus
+voir2 <- subset (voir, bool)
+bool <- voir2$lemma == "<unknown>"
+sum(bool)
+voir2$lemma[bool] <- voir2$token[bool]
+bool <- voir2$token == "AAAAAZZZZZ"
+sum(bool)
+### enlever les pipe
+voir2$lemma <- lapply(voir2$lemma, function(x){
+x <- unlist(strsplit(x,"\\|"))
+if (length(x) == 1){
+return(x)
+} else {
+return(x[2])
+}
+})
+tous <- paste (voir2$lemma,collapse=" ")
+tous <- unlist(strsplit(tous, "AAAAAZZZZZ"))
+length(tous)
+### extraction pour word2vec :
+# writeLines(tous,"ivg.txt")
+###### analyser ce corpus de termes lemmatisés :
+library(tm)
+myCorpus <- Corpus(VectorSource(tous))
+myCorpus[[1]]
+myCorpus[[1]]$content
+myCorpus[[2]]$meta
+## fonctions disponibles :
+getTransformations()
+#### fonction pour cleaner les données :
+removeAccents <- content_transformer(function(x) {
+return (x <- iconv(x, to='ASCII//TRANSLIT'))
+})
+#create the toSpace content transformer
+toSpace <- content_transformer(function(x, pattern) {
+return (gsub(pattern, " ", x))
+})
+# retirer les accents
+myCorpus <- tm_map(myCorpus, removeAccents)
+myCorpus[[1]]$content
+# retirer les mots vides
+motsvides <- c("avoir","etre","faire","bonjour","savoir","merci",
+"pouvoir","aller","reponse","question",
+"meme","autre")
+myCorpus <- tm_map(myCorpus, removeWords, motsvides)
+myCorpus[[1]]$content
+## retirer la punctuation
+myCorpus <- tm_map(myCorpus, toSpace, "[[:punct:]]")
+myCorpus <- tm_map(myCorpus,content_transformer(tolower))
+myCorpus <- tm_map(myCorpus, removeNumbers)
+myCorpus[[1]]$content
+### extraction pour word2vec :
+# writeLines(tous,"ivg.txt")
+# texte <- unlist(sapply(myCorpus, `[`, "content"))
+# length(texte)
+# writeLines(texte,"ivg.txt")
+return(myCorpus)
+}
+myCorpusIVG <- get_corpus(ivg)
+dtm <- DocumentTermMatrix(myCorpusIVG,control=list(stemming =F,
+stopwords=F,
+minWordLength=1,
+removeNumers=T,
+removePunctuation=T,
+bounds = list(global = c(10,Inf))))
+freq <- colSums(as.matrix(dtm))
+length(freq)
+freq2 <- sort(freq,decreasing = T)
+freq2[1:100]
+library(tm)
+library(RTextTools)
+library(topicmodels)
+# Parametres Gibbs sampling (diagnostics traces MCMC pour établir les bons paramètre)
+# Nombre d'iterations
+iter <- 1000
+# période de chauffe
+burnin <- 100
+# thinig  : augmenter décorrélation chaîne
+thin <- 5
+# Nombre de sujets
+k <- 3
+# MCMC
+# NB : phrase.split(" ").length == 1 --> ne fonctionne pas
+#matrix <- create_matrix(Posts[1:146],removeNumbers=TRUE)
+ldaOut <-LDA(dtm,k, method = "Gibbs",
+control=list(burnin = burnin,
+iter = iter, thin=thin))
+# n termes les plus probable dans chaque sujet
+n <- 20
+ldaOut.terms <- as.matrix(terms(ldaOut,n))
+ldaOut.terms
+topicProbabilities <- as.data.frame(ldaOut@gamma)
+bool <- topicProbabilities$V1 > topicProbabilities$V2
+### Classifier
+topicProbabilities$topic <- ifelse(bool, "Topic1","Topic2")
+topicProbabilities$categorie <- c(rep("Contraception",length(myCorpusContraception)),
+rep("IVG",length(myCorpusIVG)))
+ftable(topicProbabilities$topic, topicProbabilities$categorie)
+################################# Visualisation ###############"
+n <- 20
+ldaOut.terms <- as.matrix(terms(ldaOut,n))
+ldaOut.terms
+topicProbabilities <- as.data.frame(ldaOut@gamma)
+bool <- topicProbabilities$V1 > topicProbabilities$V2
+### Classifier
+topicProbabilities$topic <- ifelse(bool, "Topic1","Topic2")
+topicProbabilities$categorie <- c(rep("Contraception",length(myCorpusContraception)),
+rep("IVG",length(myCorpusIVG)))
+library(wordVectors)
+rm(list=ls())
+###################### Word2Vec Contraception ##############################
+#### créer le corpus avec 2.LDA.R puis :
+### exporter le corpus au format txt pour word2vec :
+# texte <- unlist(sapply(myCorpusContraception, `[`, "content"))
+# length(texte)
+# writeLines(texte,"Contraception.txt")
+## chargement du modèle
+model = read.vectors("data/Contraception.bin")
+names(nearest_to(model,model[[c("cerazette")]]))
+library(wordVectors)
+rm(list=ls())
+###################### Word2Vec Contraception ##############################
+#### créer le corpus avec 2.LDA.R puis :
+### exporter le corpus au format txt pour word2vec :
+# texte <- unlist(sapply(myCorpusContraception, `[`, "content"))
+# length(texte)
+# writeLines(texte,"Contraception.txt")
+### paramétrisation du modèle :
+model = read.vectors("data/Contraception.bin")
+names(nearest_to(model,model[[c("cerazette")]]))
